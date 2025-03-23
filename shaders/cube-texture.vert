@@ -15,6 +15,7 @@ layout(set = 1, binding = 0) uniform PushConstants {
     float rotation;
 };
 
+
 layout(set = 1, binding = 1) uniform View {
     mat4 view_matrix;
 };
@@ -58,6 +59,21 @@ mat4 isometric_view_matrix() {
 
     return rotateX * rotateY;
 }
+
+mat4 test_view_matrix = mat4(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, -5.0, 1.0 // Move the camera back
+);
+
+mat4 test_projection_matrix = mat4(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, -1.0, -1.0,
+    0.0, 0.0, -0.1, 0.0
+);
+
 
 void main(void) {
     // Calculate the final vertex position by multiplying in the projection and view matrices.

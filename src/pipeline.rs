@@ -19,7 +19,7 @@ pub fn create_pipeline(gpu: &Device, window: &Window) -> Result<GraphicsPipeline
         .create_shader()
         .with_code(
             ShaderFormat::SpirV,
-            include_bytes!("shaders/cube-texture.vert.spv"),
+            include_bytes!("../shaders/cube-texture.vert.spv"),
             ShaderStage::Vertex,
         )
         .with_uniform_buffers(3)
@@ -29,7 +29,7 @@ pub fn create_pipeline(gpu: &Device, window: &Window) -> Result<GraphicsPipeline
         .create_shader()
         .with_code(
             ShaderFormat::SpirV,
-            include_bytes!("shaders/cube-texture.frag.spv"),
+            include_bytes!("../shaders/cube-texture.frag.spv"),
             ShaderStage::Fragment,
         )
         .with_samplers(1)

@@ -1,4 +1,4 @@
-use ultraviolet::projection::lh_yup::perspective_vk;
+use ultraviolet::projection::rh_ydown::perspective_vk;
 use::ultraviolet::Vec3;
 use::ultraviolet::Mat4;
 
@@ -34,6 +34,10 @@ impl Camera {
             view_matrix,
             projection_matrix,
         }
+    }
+
+    pub fn position(&self) -> &Vec3 {
+        &self.position
     }
 
     pub fn projection_matrix(&self) -> &Mat4 {

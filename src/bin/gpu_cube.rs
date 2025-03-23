@@ -101,7 +101,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create_shader()
         .with_code(
             ShaderFormat::SpirV,
-            include_bytes!("../shaders/cube.vert.spv"),
+            include_bytes!("../../shaders/cube.vert.spv"),
             ShaderStage::Vertex,
         )
         .with_uniform_buffers(1)
@@ -111,7 +111,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create_shader()
         .with_code(
             ShaderFormat::SpirV,
-            include_bytes!("../shaders/cube.frag.spv"),
+            include_bytes!("../../shaders/cube.frag.spv"),
             ShaderStage::Fragment,
         )
         .with_entrypoint("main")

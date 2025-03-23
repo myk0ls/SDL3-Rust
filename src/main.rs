@@ -1,6 +1,7 @@
 mod camera;
 mod pipeline;
 mod vertex;
+mod build;
 
 use camera::Camera;
 use pipeline::create_pipeline;
@@ -292,16 +293,22 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Event::MouseMotion { xrel, yrel, .. } => {
                     // Handle camera rotation
-                    let sensitivity = 0.001;
+                    let sensitivity = 0.01;
                     camera.rotate_camera(-yrel as f32 * sensitivity, -xrel as f32 * sensitivity);
                 }
                 _ => {}
                 
             }
         }
-
         //Update camera view_matrix
         camera.update_view_matrix();
+        let debug_camera_position = &camera.position();
+
+        //println!("View Matrix: {:?}", camera.view_matrix());
+        //println!("Projection Matrix: {:?}", camera.projection_matrix());
+
+
+        //println!("{x} {y} {z}", x = debug_camera_position.x.to_string(), y = debug_camera_position.y.to_string(), z = debug_camera_position.z.to_string());
 
         // The swapchain texture is basically the framebuffer corresponding to the drawable
         // area of a given window - note how we "wait" for it to come up
@@ -356,8 +363,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             command_buffer.push_vertex_uniform_data(0, &rotation);
             rotation += 0.1f32;
 
-            command_buffer.push_vertex_uniform_data(1, &camera.view_matrix());
-            command_buffer.push_vertex_uniform_data(2, &camera.projection_matrix());
+            let view_matrix_data: [f32; 16] = mat4_to_array(*camera.view_matrix());
+            let projection_matrix_data: [f32; 16] = mat4_to_array(*camera.projection_matrix());
+
+            command_buffer.push_vertex_uniform_data(1, &view_matrix_data);
+            command_buffer.push_vertex_uniform_data(2, &projection_matrix_data);
+
+            println!("View Matrix Data: {:?}", view_matrix_data);
+            //println!("Projection Matrix Data: {:?}", projection_matrix_data);
 
             // Finally, draw the cube
             render_pass.draw_indexed_primitives(CUBE_INDICES.len() as u32, 1, 0, 0, 0);
@@ -469,4 +482,14 @@ fn create_buffer_with_data<T: Copy>(
     );
 
     Ok(buffer)
+}
+
+fn mat4_to_array(mat: ultraviolet::Mat4) -> [f32; 16] {
+    let mut array = [0.0; 16];
+    for i in 0..4 {
+        for j in 0..4 {
+            array[i * 4 + j] = mat.cols[i][j];
+        }
+    }
+    array
 }

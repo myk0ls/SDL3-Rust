@@ -26,8 +26,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_window(&window)?;
 
-    let fs_source = include_bytes!(".././shaders/triangle.frag.spv");
-    let vs_source = include_bytes!(".././shaders/triangle.vert.spv");
+    let fs_source = include_bytes!("../../shaders/triangle.frag.spv");
+    let vs_source = include_bytes!("../../shaders/triangle.vert.spv");
 
     let vs_shader = gpu
         .create_shader()
