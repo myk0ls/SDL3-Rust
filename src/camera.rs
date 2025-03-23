@@ -1,6 +1,5 @@
 use ultraviolet::projection::rh_ydown::perspective_vk;
-use::ultraviolet::Vec3;
-use::ultraviolet::Mat4;
+use ultraviolet::{Vec3, Mat4};
 
 pub struct Camera {
     position: Vec3,
@@ -10,10 +9,12 @@ pub struct Camera {
     aspect_ratio: f32,
     near: f32,
     far: f32,
-    dirty: bool, //mark if camera needs updating
+    dirty: bool,
     view_matrix: Mat4,
     projection_matrix: Mat4,
-
+    forward: Vec3,
+    right: Vec3,
+    up: Vec3,
 }
 
 impl Camera {
@@ -21,6 +22,11 @@ impl Camera {
         let aspect_ratio = width as f32 / height as f32;
         let projection_matrix = perspective_vk(fov.to_radians(), aspect_ratio, near, far);
         let view_matrix = Mat4::identity();
+
+        // Initialize camera vectors
+        let forward = Vec3::new(0.0, 0.0, -1.0); // Default forward direction (negative Z)
+        let right = Vec3::new(1.0, 0.0, 0.0);    // Default right direction (positive X)
+        let up = Vec3::new(0.0, 1.0, 0.0);       // Default up direction (positive Y)
 
         Self {
             position: Vec3::zero(),
@@ -33,6 +39,9 @@ impl Camera {
             dirty: true,
             view_matrix,
             projection_matrix,
+            forward,
+            right,
+            up,
         }
     }
 
@@ -53,23 +62,46 @@ impl Camera {
             return;
         }
 
-        let rotation_x = Mat4::from_rotation_x(self.pitch);
-        let rotation_y = Mat4::from_rotation_y(self.yaw);
-        let rotation = rotation_y * rotation_x;
+        // Calculate the view matrix using the camera's position and orientation
+        let target = self.position + self.forward;
+        let world_up = Vec3::new(0.0, 1.0, 0.0); // Fixed world up direction
+        self.view_matrix = Mat4::look_at(self.position, target, world_up);
 
-        let translation = Mat4::from_translation(-self.position);
-        self.view_matrix = rotation * translation;
         self.dirty = false;
     }
 
     pub fn move_camera(&mut self, delta: Vec3) {
-        self.position += delta;
+        // Move the camera relative to its orientation
+        self.position += self.forward * delta.z; // Forward/backward
+        self.position += self.right * delta.x;   // Left/right
+        self.position += self.up * delta.y;      // Up/down
+
         self.dirty = true;
     }
 
     pub fn rotate_camera(&mut self, delta_pitch: f32, delta_yaw: f32) {
+        // Update pitch and yaw
         self.pitch += delta_pitch;
         self.yaw += delta_yaw;
+
+        // Restrict pitch to avoid flipping the camera
+        self.pitch = self.pitch.clamp(-89.0_f32.to_radians(), 89.0_f32.to_radians());
+
+        // Calculate the new forward vector
+        self.forward = Vec3::new(
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+            self.yaw.sin() * self.pitch.cos(),
+        )
+        .normalized();
+
+        // Recalculate the right vector using a fixed world up direction
+        let world_up = Vec3::new(0.0, 1.0, 0.0); // Fixed world up direction
+        self.right = self.forward.cross(world_up).normalized();
+
+        // Recalculate the up vector using the right and forward vectors
+        self.up = self.right.cross(self.forward).normalized();
+
         self.dirty = true;
     }
 
@@ -78,5 +110,4 @@ impl Camera {
         self.projection_matrix = perspective_vk(self.fov.to_radians(), self.aspect_ratio, self.near, self.far);
         self.dirty = true;
     }
-
 }

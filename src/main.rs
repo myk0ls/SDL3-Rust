@@ -19,6 +19,7 @@ use sdl3::{
         VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState,
     },
     keyboard::Keycode,
+    keyboard::Scancode,
     pixels::Color,
     surface::Surface,
     Error,
@@ -184,12 +185,14 @@ const CUBE_INDICES: &'static [u16] = &[
 ];
 
 const WINDOW_SIZE: u32 = 800;
+const WINDOW_HEIGHT: u32 = 900;
+const WINDOW_WIDTH: u32 = 1600;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdl_context = sdl3::init()?;
     let video_subsystem = sdl_context.video()?;
     let window = video_subsystem
-        .window("rust-sdl3 demo: GPU (texture)", WINDOW_SIZE, WINDOW_SIZE)
+        .window("rust-sdl3 demo: GPU (texture)", WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -257,8 +260,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut depth_texture = gpu.create_texture(
         TextureCreateInfo::new()
             .with_type(TextureType::_2D)
-            .with_width(WINDOW_SIZE)
-            .with_height(WINDOW_SIZE)
+            .with_width(WINDOW_WIDTH)
+            .with_height(WINDOW_HEIGHT)
             .with_layer_count_or_depth(1)
             .with_num_levels(1)
             .with_sample_count(SampleCount::NoMultiSampling)
@@ -267,11 +270,26 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     //create the camera
-    let mut camera = Camera::new(45.0, WINDOW_SIZE, WINDOW_SIZE, 0.1, 100.0);
+    let mut camera = Camera::new(65.0, WINDOW_WIDTH, WINDOW_HEIGHT, 0.1, 100.0);
+
+    //hide cursor, capture mouse and restrict to window
+    sdl_context.mouse().set_relative_mouse_mode(&window, true);
+    sdl_context.mouse().show_cursor(false);
+
+    let mut state: [bool; 6] = [false; 6];
 
     let mut rotation = 45.0f32;
     let mut event_pump = sdl_context.event_pump()?;
     'running: loop {
+        
+        state[0] = event_pump.keyboard_state().is_scancode_pressed(Scancode::W);
+        state[1] = event_pump.keyboard_state().is_scancode_pressed(Scancode::A);
+        state[2] = event_pump.keyboard_state().is_scancode_pressed(Scancode::S);
+        state[3] = event_pump.keyboard_state().is_scancode_pressed(Scancode::D);
+        state[4] = event_pump.keyboard_state().is_scancode_pressed(Scancode::Space);
+        state[5] = event_pump.keyboard_state().is_scancode_pressed(Scancode::LCtrl);
+
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -280,29 +298,58 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 } => break 'running,
                 Event::KeyDown { keycode: Some(key), ..} => {
-                    let move_speed = 0.5;
                     match key {
-                        Keycode::W => camera.move_camera(Vec3::new(0.0, 0.0, -move_speed)),
-                        Keycode::S => camera.move_camera(Vec3::new(0.0, 0.0, move_speed)),
-                        Keycode::A => camera.move_camera(Vec3::new(-move_speed, 0.0, 0.0)),
-                        Keycode::D => camera.move_camera(Vec3::new(move_speed, 0.0, 0.0)),
-                        Keycode::Space => camera.move_camera(Vec3::new(0.0, move_speed, 0.0)),
-                        Keycode::LCtrl => camera.move_camera(Vec3::new(0.0, -move_speed, 0.0)),
+                        //Keycode::Space => camera.move_camera(Vec3::new(0.0, move_speed, 0.0)),
+                        //Keycode::LShift => camera.move_camera(Vec3::new(0.0, -move_speed, 0.0)),
                         _ => {}
                     }
                 }
                 Event::MouseMotion { xrel, yrel, .. } => {
                     // Handle camera rotation
-                    let sensitivity = 0.01;
-                    camera.rotate_camera(-yrel as f32 * sensitivity, -xrel as f32 * sensitivity);
+                    let sensitivity = 0.005;
+                    camera.rotate_camera(-yrel as f32 * sensitivity, xrel as f32 * sensitivity);
                 }
                 _ => {}
                 
             }
         }
+
+        let move_speed = 0.03;
+        //W
+        if state[0] {
+            camera.move_camera(Vec3::new(0.0, 0.0, move_speed));
+        }
+
+        //A
+        if state[1] {
+            camera.move_camera(Vec3::new(-move_speed, 0.0, 0.0));
+        }
+
+        //S
+        if state[2] {
+            camera.move_camera(Vec3::new(0.0, 0.0, -move_speed));
+        }
+
+        //D
+        if state[3] {
+            camera.move_camera(Vec3::new(move_speed, 0.0, 0.0));
+        }
+
+        //Space
+        if state[4] {
+            camera.move_camera(Vec3::new(0.0, move_speed, 0.0));
+        }
+
+        //LCtrl
+        if state[5] {
+            camera.move_camera(Vec3::new(0.0, -move_speed, 0.0));
+        }
+        
+        
+        
         //Update camera view_matrix
         camera.update_view_matrix();
-        let debug_camera_position = &camera.position();
+        //let debug_camera_position = &camera.position();
 
         //println!("View Matrix: {:?}", camera.view_matrix());
         //println!("Projection Matrix: {:?}", camera.projection_matrix());
@@ -369,7 +416,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             command_buffer.push_vertex_uniform_data(1, &view_matrix_data);
             command_buffer.push_vertex_uniform_data(2, &projection_matrix_data);
 
-            println!("View Matrix Data: {:?}", view_matrix_data);
+            //println!("View Matrix Data: {:?}", view_matrix_data);
             //println!("Projection Matrix Data: {:?}", projection_matrix_data);
 
             // Finally, draw the cube
