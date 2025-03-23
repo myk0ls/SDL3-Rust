@@ -1,3 +1,10 @@
+mod camera;
+mod pipeline;
+mod vertex;
+
+use camera::Camera;
+use pipeline::create_pipeline;
+use vertex::Vertex;
 use sdl3::{
     event::Event,
     gpu::{
@@ -16,20 +23,11 @@ use sdl3::{
     Error,
 };
 use std::path::Path;
+use ultraviolet::Vec3;
 
 extern crate sdl3;
 
-mod camera;
 
-#[repr(packed)]
-#[derive(Copy, Clone)]
-pub struct Vertex {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub u: f32,
-    pub v: f32,
-}
 
 // Below are the vertices and indices that make up the 3D mesh of the cube.
 const CUBE_VERTICES: &'static [Vertex] = &[
@@ -201,83 +199,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_window(&window)?;
 
-    // Our shaders, require to be precompiled by a SPIR-V compiler beforehand
-    let vert_shader = gpu
-        .create_shader()
-        .with_code(
-            ShaderFormat::SpirV,
-            include_bytes!("shaders/cube-texture.vert.spv"),
-            ShaderStage::Vertex,
-        )
-        .with_uniform_buffers(1)
-        .with_entrypoint("main")
-        .build()?;
-    let frag_shader = gpu
-        .create_shader()
-        .with_code(
-            ShaderFormat::SpirV,
-            include_bytes!("shaders/cube-texture.frag.spv"),
-            ShaderStage::Fragment,
-        )
-        .with_samplers(1)
-        .with_entrypoint("main")
-        .build()?;
-
-    // Create a pipeline, we specify that we want our target format in the swapchain
-    // since we are rendering directly to the screen. However, we could specify a texture
-    // buffer instead (e.g., for offscreen rendering).
-    let swapchain_format = gpu.get_swapchain_texture_format(&window);
-    let pipeline = gpu
-        .create_graphics_pipeline()
-        .with_primitive_type(PrimitiveType::TriangleList)
-        .with_fragment_shader(&frag_shader)
-        .with_vertex_shader(&vert_shader)
-        .with_vertex_input_state(
-            VertexInputState::new()
-                .with_vertex_buffer_descriptions(&[VertexBufferDescription::new()
-                    .with_slot(0)
-                    .with_pitch(size_of::<Vertex>() as u32)
-                    .with_input_rate(VertexInputRate::Vertex)
-                    .with_instance_step_rate(0)])
-                .with_vertex_attributes(&[
-                    VertexAttribute::new()
-                        .with_format(VertexElementFormat::Float3)
-                        .with_location(0)
-                        .with_buffer_slot(0)
-                        .with_offset(0),
-                    VertexAttribute::new()
-                        .with_format(VertexElementFormat::Float2)
-                        .with_location(1)
-                        .with_buffer_slot(0)
-                        .with_offset((3 * size_of::<f32>()) as u32),
-                ]),
-        )
-        .with_rasterizer_state(
-            RasterizerState::new()
-                .with_fill_mode(FillMode::Fill)
-                // Turn off culling so that I don't have to get my cube vertex order perfect
-                .with_cull_mode(CullMode::None),
-        )
-        .with_depth_stencil_state(
-            // Enable depth testing
-            DepthStencilState::new()
-                .with_enable_depth_test(true)
-                .with_enable_depth_write(true)
-                .with_compare_op(CompareOp::Less),
-        )
-        .with_target_info(
-            GraphicsPipelineTargetInfo::new()
-                .with_color_target_descriptions(&[
-                    ColorTargetDescription::new().with_format(swapchain_format)
-                ])
-                .with_has_depth_stencil_target(true)
-                .with_depth_stencil_format(TextureFormat::D16Unorm),
-        )
-        .build()?;
-
-    // The pipeline now holds copies of our shaders, so we can release them
-    drop(vert_shader);
-    drop(frag_shader);
+    let pipeline = create_pipeline(&gpu, &window)?;
 
     // Next, we create a transfer buffer that is large enough to hold either
     // our vertices or indices since we will be transferring both with it.
@@ -343,6 +265,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_usage(TextureUsage::Sampler | TextureUsage::DepthStencilTarget),
     )?;
 
+    //create the camera
+    let mut camera = Camera::new(45.0, WINDOW_SIZE, WINDOW_SIZE, 0.1, 100.0);
+
     let mut rotation = 45.0f32;
     let mut event_pump = sdl_context.event_pump()?;
     'running: loop {
@@ -353,9 +278,30 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
+                Event::KeyDown { keycode: Some(key), ..} => {
+                    let move_speed = 0.5;
+                    match key {
+                        Keycode::W => camera.move_camera(Vec3::new(0.0, 0.0, -move_speed)),
+                        Keycode::S => camera.move_camera(Vec3::new(0.0, 0.0, move_speed)),
+                        Keycode::A => camera.move_camera(Vec3::new(-move_speed, 0.0, 0.0)),
+                        Keycode::D => camera.move_camera(Vec3::new(move_speed, 0.0, 0.0)),
+                        Keycode::Space => camera.move_camera(Vec3::new(0.0, move_speed, 0.0)),
+                        Keycode::LCtrl => camera.move_camera(Vec3::new(0.0, -move_speed, 0.0)),
+                        _ => {}
+                    }
+                }
+                Event::MouseMotion { xrel, yrel, .. } => {
+                    // Handle camera rotation
+                    let sensitivity = 0.001;
+                    camera.rotate_camera(-yrel as f32 * sensitivity, -xrel as f32 * sensitivity);
+                }
                 _ => {}
+                
             }
         }
+
+        //Update camera view_matrix
+        camera.update_view_matrix();
 
         // The swapchain texture is basically the framebuffer corresponding to the drawable
         // area of a given window - note how we "wait" for it to come up
@@ -409,6 +355,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Set the rotation uniform for our cube vert shader
             command_buffer.push_vertex_uniform_data(0, &rotation);
             rotation += 0.1f32;
+
+            command_buffer.push_vertex_uniform_data(1, &camera.view_matrix());
+            command_buffer.push_vertex_uniform_data(2, &camera.projection_matrix());
 
             // Finally, draw the cube
             render_pass.draw_indexed_primitives(CUBE_INDICES.len() as u32, 1, 0, 0, 0);

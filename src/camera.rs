@@ -1,70 +1,78 @@
+use ultraviolet::projection::lh_yup::perspective_vk;
+use::ultraviolet::Vec3;
+use::ultraviolet::Mat4;
+
 pub struct Camera {
-    position: [f32; 3],      // (x, y, z)
-    front: [f32; 3],         // Direction the camera is looking
-    up: [f32; 3],            // Up vector
-    right: [f32; 3],         // Right vector
-    world_up: [f32; 3],      // World's up vector (usually [0.0, 1.0, 0.0])
-    yaw: f32,                // Horizontal rotation
-    pitch: f32,              // Vertical rotation
-    speed: f32,              // Movement speed
-    sensitivity: f32,        // Mouse sensitivity
+    position: Vec3,
+    pitch: f32,
+    yaw: f32,
+    fov: f32,
+    aspect_ratio: f32,
+    near: f32,
+    far: f32,
+    dirty: bool, //mark if camera needs updating
+    view_matrix: Mat4,
+    projection_matrix: Mat4,
+
 }
 
 impl Camera {
-    pub fn new(position: [f32; 3], yaw: f32, pitch: f32)) -> Self {
-        let world_up = [0.0, 1.0, 0.0];
-        let front = [0.0, 0.0, -1.0];
-        let right = [0.0, 0.0, 0.0]; // Will be calculated later
-        let up = [0.0, 0.0, 0.0];    // Will be calculated later
+    pub fn new(fov: f32, width: u32, height: u32, near: f32, far: f32) -> Self {
+        let aspect_ratio = width as f32 / height as f32;
+        let projection_matrix = perspective_vk(fov.to_radians(), aspect_ratio, near, far);
+        let view_matrix = Mat4::identity();
 
-        let mut camera = Camera {
-            position,
-            front,
-            up,
-            right,
-            world_up,
-            yaw,
-            pitch,
-            speed: 2.5,
-            sensitivity: 0.1,
-        };
-
-        camera.update_vectors();
-        camera
+        Self {
+            position: Vec3::zero(),
+            pitch: 0.0,
+            yaw: 0.0,
+            fov,
+            aspect_ratio,
+            near,
+            far,
+            dirty: true,
+            view_matrix,
+            projection_matrix,
+        }
     }
 
-    pub fn update(&mut self, mouse_delta: (f32, f32)) {
-        // Update yaw and pitch based on mouse movement
-        self.yaw += mouse_delta.0 * self.sensitivity;
-        self.pitch -= mouse_delta.1 * self.sensitivity;
-
-        // Clamp pitch to avoid flipping
-        self.pitch = self.pitch.clamp(-89.0, 89.0);
-
-        // Update front, right, and up vectors
-        self.update_vectors();
+    pub fn projection_matrix(&self) -> &Mat4 {
+        &self.projection_matrix
     }
 
-    fn update_vectors(&mut self) {
-        // Calculate the new front vector
-        let front_x = self.yaw.to_radians().cos() * self.pitch.to_radians().cos();
-        let front_y = self.pitch.to_radians().sin();
-        let front_z = self.yaw.to_radians().sin() * self.pitch.to_radians().cos();
-        self.front = [front_x, front_y, front_z];
-
-        // Recalculate right and up vectors
-        self.right = normalize(cross(self.front, self.world_up));
-        self.up = normalize(cross(self.right, self.front));
+    pub fn view_matrix(&self) -> &Mat4 {
+        &self.view_matrix
     }
 
-    pub fn get_view_matrix(&self) -> [[f32; 4]; 4] {
-        let target = [
-            self.position[0] + self.front[0],
-            self.position[1] + self.front[1],
-            self.position[2] + self.front[2],
-        ];
+    pub fn update_view_matrix(&mut self) {
+        if !self.dirty {
+            return;
+        }
 
-        // Create a look-at matrix
-        look_at(self.position, target, self.up)
+        let rotation_x = Mat4::from_rotation_x(self.pitch);
+        let rotation_y = Mat4::from_rotation_y(self.yaw);
+        let rotation = rotation_y * rotation_x;
+
+        let translation = Mat4::from_translation(-self.position);
+        self.view_matrix = rotation * translation;
+        self.dirty = false;
     }
+
+    pub fn move_camera(&mut self, delta: Vec3) {
+        self.position += delta;
+        self.dirty = true;
+    }
+
+    pub fn rotate_camera(&mut self, delta_pitch: f32, delta_yaw: f32) {
+        self.pitch += delta_pitch;
+        self.yaw += delta_yaw;
+        self.dirty = true;
+    }
+
+    pub fn set_viewport(&mut self, width: u32, height: u32) {
+        self.aspect_ratio = width as f32 / height as f32;
+        self.projection_matrix = perspective_vk(self.fov.to_radians(), self.aspect_ratio, self.near, self.far);
+        self.dirty = true;
+    }
+
 }

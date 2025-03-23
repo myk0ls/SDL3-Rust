@@ -15,6 +15,14 @@ layout(set = 1, binding = 0) uniform PushConstants {
     float rotation;
 };
 
+layout(set = 1, binding = 1) uniform View {
+    mat4 view_matrix;
+};
+
+layout(set = 1, binding = 2) uniform Projection {
+    mat4 projection_matrix;
+};
+
 // Generates an orthographic projection matrix
 mat4 ortho(float left, float right, float bottom, float top, float near, float far) {
     return mat4(
@@ -55,9 +63,11 @@ void main(void) {
     // Calculate the final vertex position by multiplying in the projection and view matrices.
     // Ordinarily, these matrices would be passed in as uniforms, but here they're
     // being calculated in-shader to avoid pulling in a matrix multiplication library.
-    mat4 proj_matrix = ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
-    mat4 view_matrix = isometric_view_matrix();
-	gl_Position = proj_matrix * view_matrix * vec4(pos, 1.0);
+    //mat4 proj_matrix = ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
+    //mat4 view_matrix = isometric_view_matrix();
+	//gl_Position = proj_matrix * view_matrix * vec4(pos, 1.0);
+
+    gl_Position = projection_matrix * view_matrix * vec4(pos, 1.0);
     out_tex_coord = tex_coord;
 
     // Create a frag color based on the vertex position
