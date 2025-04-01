@@ -1,12 +1,11 @@
 use sdl3::{
-    event::Event, gpu::{
-        Buffer, BufferBinding, BufferRegion, BufferUsageFlags, ColorTargetDescription, ColorTargetInfo, CompareOp, CopyPass, CullMode, 
-        DepthStencilState, DepthStencilTargetInfo, Device, FillMode, Filter, GraphicsPipeline, GraphicsPipelineTargetInfo,
-         IndexElementSize, LoadOp, PrimitiveType, RasterizerState, SampleCount, SamplerAddressMode, SamplerCreateInfo, 
-         SamplerMipmapMode, ShaderFormat, ShaderStage, StoreOp, Texture, TextureCreateInfo, TextureFormat, TextureRegion, 
-         TextureSamplerBinding, TextureTransferInfo, TextureType, TextureUsage, TransferBuffer, TransferBufferLocation, 
-         TransferBufferUsage, VertexAttribute, VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState,
-    }, keyboard::Keycode, pixels::Color, surface::Surface, video::Window, Error
+        gpu::{
+        ColorTargetDescription, CompareOp, CullMode, 
+        DepthStencilState,  Device, FillMode,  GraphicsPipeline, GraphicsPipelineTargetInfo,
+         PrimitiveType, RasterizerState,
+          ShaderFormat, ShaderStage, TextureFormat,
+         VertexAttribute, VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState,
+    }, video::Window, Error
 };
 
 use std::mem::size_of;

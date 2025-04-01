@@ -2,6 +2,7 @@ mod camera;
 mod pipeline;
 mod vertex;
 mod build;
+mod resources;
 
 use camera::Camera;
 use pipeline::create_pipeline;
@@ -184,7 +185,6 @@ const CUBE_INDICES: &'static [u16] = &[
         // not bothering with bottom since it's not visible
 ];
 
-const WINDOW_SIZE: u32 = 800;
 const WINDOW_HEIGHT: u32 = 900;
 const WINDOW_WIDTH: u32 = 1600;
 
@@ -276,6 +276,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     sdl_context.mouse().set_relative_mouse_mode(&window, true);
     sdl_context.mouse().show_cursor(false);
 
+    resources::load_gltf("./assets/Monkey.glb");
+
+
     let mut state: [bool; 6] = [false; 6];
 
     let mut rotation = 45.0f32;
@@ -294,7 +297,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             match event {
                 Event::Quit { .. }
                 | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+                    keycode: Some(Keycode::F8),
                     ..
                 } => break 'running,
                 Event::KeyDown { keycode: Some(key), ..} => {
@@ -513,7 +516,6 @@ fn create_buffer_with_data<T: Copy>(
 
     // Now unmap the memory since we're done copying
     map.unmap();
-
     // Finally, add a command to the copy pass to upload this data to the GPU
     //
     // Note: We also set `cycle` to true here for the same reason.
