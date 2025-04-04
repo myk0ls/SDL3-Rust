@@ -1,3 +1,4 @@
+use easy_gltf::model::Vertex;
 use sdl3::{
         gpu::{
         ColorTargetDescription, CompareOp, CullMode, 
@@ -48,20 +49,37 @@ pub fn create_pipeline(gpu: &Device, window: &Window) -> Result<GraphicsPipeline
             VertexInputState::new()
                 .with_vertex_buffer_descriptions(&[VertexBufferDescription::new()
                     .with_slot(0)
-                    .with_pitch(size_of::<vertex::Vertex>() as u32)
+                    .with_pitch(std::mem::size_of::<easy_gltf::model::Vertex>() as u32) // Should be 3+3+4+2 = 12 floats = 48 bytes
                     .with_input_rate(VertexInputRate::Vertex)
                     .with_instance_step_rate(0)])
                 .with_vertex_attributes(&[
+                    // Position (vec3) - 0-12 bytes
                     VertexAttribute::new()
                         .with_format(VertexElementFormat::Float3)
                         .with_location(0)
                         .with_buffer_slot(0)
                         .with_offset(0),
+                    
+                    // Normal (vec3) - 12-24 bytes
                     VertexAttribute::new()
-                        .with_format(VertexElementFormat::Float2)
+                        .with_format(VertexElementFormat::Float3)
                         .with_location(1)
                         .with_buffer_slot(0)
-                        .with_offset((3 * size_of::<f32>()) as u32),
+                        .with_offset(12),
+                    
+                    // Tangent (vec4) - 24-40 bytes
+                    VertexAttribute::new()
+                        .with_format(VertexElementFormat::Float4)
+                        .with_location(2)
+                        .with_buffer_slot(0)
+                        .with_offset(24),
+                    
+                    // Texture Coord (vec2) - 40-48 bytes
+                    VertexAttribute::new()
+                        .with_format(VertexElementFormat::Float2)
+                        .with_location(3)
+                        .with_buffer_slot(0)
+                        .with_offset(40),
                 ]),
         )
         .with_rasterizer_state(

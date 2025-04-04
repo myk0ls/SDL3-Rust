@@ -5,6 +5,8 @@ mod build;
 mod resources;
 
 use camera::Camera;
+use easy_gltf::model::Mode;
+use gltf::{material, texture::{self, Sampler}};
 use pipeline::create_pipeline;
 use vertex::Vertex;
 use sdl3::{
@@ -25,7 +27,7 @@ use sdl3::{
     surface::Surface,
     Error,
 };
-use std::path::Path;
+use std::{num, path::Path, ptr::null, sync::Arc};
 use ultraviolet::Vec3;
 
 extern crate sdl3;
@@ -205,6 +207,60 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pipeline = create_pipeline(&gpu, &window)?;
 
+    let scenes = easy_gltf::load("./assets/Monkey.glb").expect("Failed to load gLTF");
+
+    // Create containers to store extracted data
+    let mut collected_vertices = Vec::new();
+    let mut collected_indices = Vec::new();
+    //let mut material = Arc::new(easy_gltf::Material { pbr: (), normal: (), occlusion: (), emissive: () });
+
+    for scene in scenes {
+        for model in scene.models {
+            // Convert vertices slice to owned Vec
+            let vertices = model.vertices().to_vec();
+            // Convert indices Option<&[u32]> to Option<Vec<u32>>
+            let indices = model.indices().map(|i| i.to_vec());
+
+            //let material = model.material();
+
+            match model.mode() {
+                Mode::Triangles => {
+                    collected_vertices.extend(vertices);
+                    if let Some(model_indices) = indices {
+                        collected_indices.extend(model_indices);
+                    }
+                },
+                // Handle other modes if needed
+                _ => {}
+            }
+            
+            Arc::try_unwrap(model.material());
+
+            let pbr = &model.material().pbr;
+            println!("Base color factor: {:?}", pbr.base_color_factor);
+            println!("Metallic factor: {}", pbr.metallic_factor);
+            println!("Roughness factor: {}", pbr.roughness_factor);
+            
+            // Access texture information if available
+            if let Some(base_color_texture) = &pbr.base_color_texture {
+                println!("Base color texture: {:?}", base_color_texture.to_ascii_lowercase());
+            }
+            
+        }
+    }
+
+    // Now you can use collected_vertices and collected_indices for buffer creation
+    let vertices_len_bytes = collected_vertices.len() * std::mem::size_of::<easy_gltf::model::Vertex>();
+    let indices_len_bytes = collected_indices.len() * std::mem::size_of::<u32>();
+
+    // Create transfer buffer using the actual loaded data sizes
+    let transfer_buffer = gpu
+        .create_transfer_buffer()
+        .with_size(vertices_len_bytes.max(indices_len_bytes) as u32)
+        .with_usage(TransferBufferUsage::Upload)
+        .build()?;
+
+    /*
     // Next, we create a transfer buffer that is large enough to hold either
     // our vertices or indices since we will be transferring both with it.
     let vertices_len_bytes = CUBE_VERTICES.len() * size_of::<Vertex>();
@@ -214,7 +270,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_size(vertices_len_bytes.max(indices_len_bytes) as u32)
         .with_usage(TransferBufferUsage::Upload)
         .build()?;
-
+    */
     // We need to start a copy pass in order to transfer data to the GPU
     let copy_commands = gpu.acquire_command_buffer()?;
     let copy_pass = gpu.begin_copy_pass(&copy_commands)?;
@@ -225,15 +281,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         &transfer_buffer,
         &copy_pass,
         BufferUsageFlags::Vertex,
-        &CUBE_VERTICES,
+        &collected_vertices,
     )?;
     let index_buffer = create_buffer_with_data(
         &gpu,
         &transfer_buffer,
         &copy_pass,
         BufferUsageFlags::Index,
-        &CUBE_INDICES,
+        &collected_indices,
     )?;
+
 
     // We're done with the transfer buffer now, so release it.
     drop(transfer_buffer);
@@ -276,7 +333,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     sdl_context.mouse().set_relative_mouse_mode(&window, true);
     sdl_context.mouse().show_cursor(false);
 
-    resources::load_gltf("./assets/Monkey.glb");
+    //resources::load_gltf("./assets/Monkey.glb");
 
 
     let mut state: [bool; 6] = [false; 6];
@@ -400,7 +457,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &BufferBinding::new()
                     .with_buffer(&index_buffer)
                     .with_offset(0),
-                IndexElementSize::_16Bit,
+                IndexElementSize::_32Bit,
             );
             render_pass.bind_fragment_samplers(
                 0,
@@ -423,7 +480,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             //println!("Projection Matrix Data: {:?}", projection_matrix_data);
 
             // Finally, draw the cube
-            render_pass.draw_indexed_primitives(CUBE_INDICES.len() as u32, 1, 0, 0, 0);
+            render_pass.draw_indexed_primitives(collected_indices.len() as u32, 1, 0, 0, 0);
 
             gpu.end_render_pass(render_pass);
             command_buffer.submit()?;
@@ -484,6 +541,14 @@ fn create_texture_from_image(
 
     Ok(texture)
 }
+
+fn create_texture_from_gltf(
+    gpu: &Device,
+    texture: &easy_gltf::Material::Texture,
+    copy_pass: &CopyPass,
+) -> Result<(Texture<'static>, Sampler), Error> {
+    
+} 
 
 /// Creates a GPU buffer and uploads data to it using the given `copy_pass` and `transfer_buffer`.
 fn create_buffer_with_data<T: Copy>(
