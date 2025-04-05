@@ -6,23 +6,16 @@ mod resources;
 
 use camera::Camera;
 use easy_gltf::model::Mode;
-use gltf::{material, texture::{self, Sampler}};
+use gltf::{material, texture::{self}};
+use image::GenericImageView;
 use pipeline::create_pipeline;
 use vertex::Vertex;
 use sdl3::{
     event::Event,
     gpu::{
-        Buffer, BufferBinding, BufferRegion, BufferUsageFlags, ColorTargetDescription,
-        ColorTargetInfo, CompareOp, CopyPass, CullMode, DepthStencilState, DepthStencilTargetInfo,
-        Device, FillMode, Filter, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp,
-        PrimitiveType, RasterizerState, SampleCount, SamplerAddressMode, SamplerCreateInfo,
-        SamplerMipmapMode, ShaderFormat, ShaderStage, StoreOp, Texture, TextureCreateInfo,
-        TextureFormat, TextureRegion, TextureSamplerBinding, TextureTransferInfo, TextureType,
-        TextureUsage, TransferBuffer, TransferBufferLocation, TransferBufferUsage, VertexAttribute,
-        VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState,
+        Buffer, BufferBinding, BufferRegion, BufferUsageFlags, ColorTargetDescription, ColorTargetInfo, CompareOp, CopyPass, CullMode, DepthStencilState, DepthStencilTargetInfo, Device, FillMode, Filter, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp, PrimitiveType, RasterizerState, SampleCount, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, ShaderFormat, ShaderStage, StoreOp, Texture, TextureCreateInfo, TextureFormat, TextureRegion, TextureSamplerBinding, TextureTransferInfo, TextureType, TextureUsage, TransferBuffer, TransferBufferLocation, TransferBufferUsage, VertexAttribute, VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState
     },
-    keyboard::Keycode,
-    keyboard::Scancode,
+    keyboard::{Keycode, Scancode},
     pixels::Color,
     surface::Surface,
     Error,
@@ -187,6 +180,65 @@ const CUBE_INDICES: &'static [u16] = &[
         // not bothering with bottom since it's not visible
 ];
 
+struct ModelMaterial {
+    base_color_texture: Option<Texture<'static>>,
+    base_color_factor: [f32; 4],
+    metallic_factor: f32,
+    roughness_factor: f32,
+    normal_texture: Option<Texture<'static>>,
+    occlusion_texture: Option<Texture<'static>>,
+    emissive_texture: Option<Texture<'static>>,
+    emissive_factor: [f32; 3],
+    texture_sampler: Sampler,
+}
+
+impl ModelMaterial {
+    fn from_gltf(
+        gpu: &Device,
+        material: &easy_gltf::Material,
+        copy_pass: &CopyPass,
+    ) -> Result<Self, Error> {
+        // Create sampler (you can customize these parameters)
+        let texture_sampler = gpu.create_sampler(
+            SamplerCreateInfo::new()
+                .with_min_filter(Filter::Linear)
+                .with_mag_filter(Filter::Linear)
+                .with_mipmap_mode(SamplerMipmapMode::Linear)
+                .with_address_mode_u(SamplerAddressMode::Repeat)
+                .with_address_mode_v(SamplerAddressMode::Repeat)
+                .with_address_mode_w(SamplerAddressMode::Repeat),
+        )?;
+
+        // Load base color texture if available
+        let base_color_texture = if let Some(texture) = &material.pbr.base_color_texture {
+            let image_data = texture.as_raw();
+            Some(create_texture_from_gltf(
+                gpu,
+                image_data,
+                texture.width(),
+                texture.height(),
+                copy_pass,
+            )?)
+        } else {
+            None
+        };
+
+        // Similarly load other textures (normal, occlusion, emissive) if needed
+
+        Ok(Self {
+            base_color_texture,
+            base_color_factor: material.pbr.base_color_factor.into(),
+            metallic_factor: material.pbr.metallic_factor,
+            roughness_factor: material.pbr.roughness_factor,
+            normal_texture: None, // Implement similar to base color
+            occlusion_texture: None, // Implement similar to base color
+            emissive_texture: None, // Implement similar to base color
+            emissive_factor: [0.0, 0.0, 0.0],
+            texture_sampler,
+        })
+    }
+}
+
 const WINDOW_HEIGHT: u32 = 900;
 const WINDOW_WIDTH: u32 = 1600;
 
@@ -207,12 +259,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pipeline = create_pipeline(&gpu, &window)?;
 
+    // We need to start a copy pass in order to transfer data to the GPU
+    let copy_commands = gpu.acquire_command_buffer()?;
+    let copy_pass = gpu.begin_copy_pass(&copy_commands)?;
+
     let scenes = easy_gltf::load("./assets/Monkey.glb").expect("Failed to load gLTF");
 
     // Create containers to store extracted data
     let mut collected_vertices = Vec::new();
     let mut collected_indices = Vec::new();
     //let mut material = Arc::new(easy_gltf::Material { pbr: (), normal: (), occlusion: (), emissive: () });
+    let mut materials = Vec::new();
 
     for scene in scenes {
         for model in scene.models {
@@ -245,6 +302,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(base_color_texture) = &pbr.base_color_texture {
                 println!("Base color texture: {:?}", base_color_texture.to_ascii_lowercase());
             }
+
+            // Create material for this model
+            let material = ModelMaterial::from_gltf(&gpu, &model.material(), &copy_pass)?;
+            materials.push(material);
             
         }
     }
@@ -271,9 +332,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_usage(TransferBufferUsage::Upload)
         .build()?;
     */
-    // We need to start a copy pass in order to transfer data to the GPU
-    let copy_commands = gpu.acquire_command_buffer()?;
-    let copy_pass = gpu.begin_copy_pass(&copy_commands)?;
 
     // Create GPU buffers to hold our vertices and indices and transfer data to them
     let vertex_buffer = create_buffer_with_data(
@@ -459,12 +517,32 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .with_offset(0),
                 IndexElementSize::_32Bit,
             );
+
+            /* 
             render_pass.bind_fragment_samplers(
                 0,
                 &[TextureSamplerBinding::new()
                     .with_texture(&cube_texture)
                     .with_sampler(&cube_texture_sampler)],
             );
+            */
+
+            for material in &materials {
+                if let Some(texture) = &material.base_color_texture {
+                    render_pass.bind_fragment_samplers(
+                        0, 
+                    &[TextureSamplerBinding::new()
+                        .with_texture(texture)
+                        .with_sampler(&material.texture_sampler)]
+                    );
+                }
+
+                command_buffer.push_fragment_uniform_data(0, &material.base_color_factor);
+                //command_buffer.push_fragment_uniform_data(1, &material.metallic_factor);
+                //command_buffer.push_fragment_uniform_data(2, &material.roughness_factor);
+
+                
+            }
 
             // Set the rotation uniform for our cube vert shader
             command_buffer.push_vertex_uniform_data(0, &rotation);
@@ -542,6 +620,7 @@ fn create_texture_from_image(
     Ok(texture)
 }
 
+/* 
 fn create_texture_from_gltf(
     gpu: &Device,
     texture: &easy_gltf::Material::Texture,
@@ -549,6 +628,53 @@ fn create_texture_from_gltf(
 ) -> Result<(Texture<'static>, Sampler), Error> {
     
 } 
+*/
+
+fn create_texture_from_gltf(
+    gpu: &Device,
+    image_data: &[u8],
+    width: u32,
+    height: u32,
+    copy_pass: &CopyPass,
+) -> Result<Texture<'static>, Error> {
+    let size_bytes = width * height * 4; // Assuming RGBA8 format
+    
+    let texture = gpu.create_texture(
+        TextureCreateInfo::new()
+            .with_format(TextureFormat::R8g8b8a8Unorm)
+            .with_type(TextureType::_2D)
+            .with_width(width)
+            .with_height(height)
+            .with_layer_count_or_depth(1)
+            .with_num_levels(1)
+            .with_usage(TextureUsage::Sampler),
+    )?;
+
+    let transfer_buffer = gpu
+        .create_transfer_buffer()
+        .with_size(size_bytes)
+        .with_usage(TransferBufferUsage::Upload)
+        .build()?;
+
+    let mut buffer_mem = transfer_buffer.map::<u8>(gpu, false);
+    buffer_mem.mem_mut().copy_from_slice(image_data);
+    buffer_mem.unmap();
+
+    copy_pass.upload_to_gpu_texture(
+        TextureTransferInfo::new()
+            .with_transfer_buffer(&transfer_buffer)
+            .with_offset(0),
+        TextureRegion::new()
+            .with_texture(&texture)
+            .with_layer(0)
+            .with_width(width)
+            .with_height(height)
+            .with_depth(1),
+        false,
+    );
+
+    Ok(texture)
+}
 
 /// Creates a GPU buffer and uploads data to it using the given `copy_pass` and `transfer_buffer`.
 fn create_buffer_with_data<T: Copy>(

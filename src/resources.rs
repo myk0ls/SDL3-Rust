@@ -10,6 +10,8 @@ pub struct Model<'a> {
 }
  */
 
+ 
+
 pub fn load_gltf(path: &str){
     let scenes = easy_gltf::load(path).expect("Failed to load gLTF");
     for scene in scenes {

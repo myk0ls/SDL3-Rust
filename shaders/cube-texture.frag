@@ -12,6 +12,20 @@ layout (location = 1) in vec3 frag_color;
 // Final color of the pixel
 layout (location = 0) out vec4 final_color;
 
+// Push constants instead of uniform block
+//layout(push_constant) uniform Material {
+    //vec4 base_color_factor;
+    //float metallic_factor;
+    //float roughness_factor;
+//} material;
+
+layout(set = 3, binding = 0) uniform PushConstants {
+	vec4 base_color_factor;
+} material;
+
+
 void main() {
-	final_color = texture(tex_sampler, tex_coord) * vec4(frag_color, 1.0);
+	vec4 base_color = texture(tex_sampler, tex_coord) * material.base_color_factor;
+
+	final_color = base_color;
 }

@@ -34,6 +34,7 @@ pub fn create_pipeline(gpu: &Device, window: &Window) -> Result<GraphicsPipeline
         )
         .with_samplers(1)
         .with_entrypoint("main")
+        .with_uniform_buffers(1)
         .build()?;
     
     // Create a pipeline, we specify that we want our target format in the swapchain

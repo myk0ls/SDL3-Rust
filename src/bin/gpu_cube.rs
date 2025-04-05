@@ -3,16 +3,15 @@ use sdl3::{
     gpu::{
         Buffer, BufferBinding, BufferRegion, BufferUsageFlags, ColorTargetDescription,
         ColorTargetInfo, CompareOp, CopyPass, CullMode, DepthStencilState, DepthStencilTargetInfo,
-        Device, FillMode, Filter, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp,
-        PrimitiveType, RasterizerState, SampleCount, SamplerAddressMode, SamplerCreateInfo,
-        SamplerMipmapMode, ShaderFormat, ShaderStage, StoreOp, Texture, TextureCreateInfo,
-        TextureFormat, TextureRegion, TextureSamplerBinding, TextureTransferInfo, TextureType,
+        Device, FillMode, GraphicsPipelineTargetInfo, IndexElementSize, LoadOp,
+        PrimitiveType, RasterizerState, SampleCount,
+        ShaderFormat, ShaderStage, StoreOp, TextureCreateInfo,
+        TextureFormat, TextureType,
         TextureUsage, TransferBuffer, TransferBufferLocation, TransferBufferUsage, VertexAttribute,
         VertexBufferDescription, VertexElementFormat, VertexInputRate, VertexInputState,
     },
     keyboard::Keycode,
     pixels::Color,
-    surface::Surface,
     Error,
 };
 
