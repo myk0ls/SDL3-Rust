@@ -25,161 +25,6 @@ use ultraviolet::Vec3;
 
 extern crate sdl3;
 
-
-
-// Below are the vertices and indices that make up the 3D mesh of the cube.
-const CUBE_VERTICES: &'static [Vertex] = &[
-    Vertex {
-        x: -0.5,
-        y: -0.5,
-        z: -0.5,
-        u: 0.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: -0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 0.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: -0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: -0.5,
-        z: 0.5,
-        u: 1.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 1.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: -0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: -0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: -0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: -0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 0.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: -0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 0.0,
-        v: 1.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: 0.5,
-        u: 1.0,
-        v: 0.0,
-    },
-    Vertex {
-        x: 0.5,
-        y: 0.5,
-        z: -0.5,
-        u: 1.0,
-        v: 1.0,
-    },
-];
-
-const CUBE_INDICES: &'static [u16] = &[
-    0, 1, 2, 0, 2, 3, // front
-    4, 5, 6, 4, 6, 7, // back
-    8, 9, 10, 10, 11, 8, // left
-    12, 13, 14, 14, 15, 12, // right
-    16, 17, 18, 18, 19, 17, // top
-        // not bothering with bottom since it's not visible
-];
-
 struct ModelMaterial {
     base_color_texture: Option<Texture<'static>>,
     base_color_factor: [f32; 4],
@@ -291,7 +136,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {}
             }
             
-            Arc::try_unwrap(model.material());
 
             let pbr = &model.material().pbr;
             println!("Base color factor: {:?}", pbr.base_color_factor);
@@ -304,7 +148,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Create material for this model
-            let material = ModelMaterial::from_gltf(&gpu, &model.material(), &copy_pass)?;
+            let material = ModelMaterial::from_gltf(&gpu, &*model.material(), &copy_pass)?;
             materials.push(material);
             
         }
@@ -366,6 +210,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_address_mode_v(SamplerAddressMode::Repeat)
             .with_address_mode_w(SamplerAddressMode::Repeat),
     )?;
+
+    let default_texture = create_default_texture(&gpu, &copy_pass)?;
 
     // Now complete and submit the copy pass commands to actually do the transfer work
     gpu.end_copy_pass(copy_pass);
@@ -526,16 +372,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .with_sampler(&cube_texture_sampler)],
             );
             */
+            
 
             for material in &materials {
-                if let Some(texture) = &material.base_color_texture {
+                let texture = &material.base_color_texture.as_ref().unwrap_or(&default_texture);
                     render_pass.bind_fragment_samplers(
                         0, 
                     &[TextureSamplerBinding::new()
                         .with_texture(texture)
                         .with_sampler(&material.texture_sampler)]
                     );
-                }
+                
 
                 command_buffer.push_fragment_uniform_data(0, &material.base_color_factor);
                 //command_buffer.push_fragment_uniform_data(1, &material.metallic_factor);
@@ -657,7 +504,7 @@ fn create_texture_from_gltf(
         .build()?;
 
     let mut buffer_mem = transfer_buffer.map::<u8>(gpu, false);
-    buffer_mem.mem_mut().copy_from_slice(image_data);
+    buffer_mem.mem_mut().copy_from_slice(&image_data);
     buffer_mem.unmap();
 
     copy_pass.upload_to_gpu_texture(
@@ -722,6 +569,44 @@ fn create_buffer_with_data<T: Copy>(
     );
 
     Ok(buffer)
+}
+
+fn create_default_texture(gpu: &Device, copy_pass: &CopyPass) -> Result<Texture<'static>, Error> {
+    // 1x1 white pixel
+    let white_pixel = [255, 255, 255, 255];
+    let texture = gpu.create_texture(
+        TextureCreateInfo::new()
+            .with_format(TextureFormat::R8g8b8a8Unorm)
+            .with_type(TextureType::_2D)
+            .with_width(1)
+            .with_height(1)
+            .with_layer_count_or_depth(1)
+            .with_num_levels(1)
+            .with_usage(TextureUsage::Sampler),
+    )?;
+    
+    let transfer_buffer = gpu.create_transfer_buffer()
+        .with_size(4)
+        .build()?;
+    
+    let mut buffer_mem = transfer_buffer.map::<u8>(gpu, false);
+    buffer_mem.mem_mut().copy_from_slice(&white_pixel);
+    buffer_mem.unmap();
+
+    copy_pass.upload_to_gpu_texture(
+        TextureTransferInfo::new()
+            .with_transfer_buffer(&transfer_buffer)
+            .with_offset(0),
+        TextureRegion::new()
+            .with_texture(&texture)
+            .with_layer(0)
+            .with_width(1)
+            .with_height(1)
+            .with_depth(1),
+        false,
+    );
+
+    Ok(texture)
 }
 
 fn mat4_to_array(mat: ultraviolet::Mat4) -> [f32; 16] {
