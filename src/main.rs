@@ -8,7 +8,7 @@ use camera::Camera;
 use easy_gltf::model::Mode;
 use gltf::{material, texture::{self}};
 use image::GenericImageView;
-use pipeline::create_pipeline;
+use pipeline::{create_pipeline, PipelineManager};
 use vertex::Vertex;
 use sdl3::{
     event::Event,
@@ -84,14 +84,21 @@ impl ModelMaterial {
     }
 }
 
+struct Light {
+    position: ultraviolet::Vec3,
+    direction: ultraviolet::Vec3,
+    view_projection: ultraviolet::Mat4,
+}
+
 const WINDOW_HEIGHT: u32 = 900;
 const WINDOW_WIDTH: u32 = 1600;
+const SHADOW_MAP_SIZE: u32 = 2048;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdl_context = sdl3::init()?;
     let video_subsystem = sdl_context.video()?;
     let window = video_subsystem
-        .window("rust-sdl3 demo: GPU (texture)", WINDOW_WIDTH, WINDOW_HEIGHT)
+        .window("best game engine in the world", WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -102,11 +109,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_window(&window)?;
 
+    let mut pipeline_manager = PipelineManager::new(gpu.clone(), &window)?;
+    pipeline_manager.load_pipelines()?;
+
     let pipeline = create_pipeline(&gpu, &window)?;
 
     // We need to start a copy pass in order to transfer data to the GPU
     let copy_commands = gpu.acquire_command_buffer()?;
     let copy_pass = gpu.begin_copy_pass(&copy_commands)?;
+
+    let default_texture = create_default_texture(&gpu, &copy_pass)?;
 
     let scenes = easy_gltf::load("./assets/Monkey.glb").expect("Failed to load gLTF");
 
@@ -211,8 +223,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_address_mode_w(SamplerAddressMode::Repeat),
     )?;
 
-    let default_texture = create_default_texture(&gpu, &copy_pass)?;
-
     // Now complete and submit the copy pass commands to actually do the transfer work
     gpu.end_copy_pass(copy_pass);
     copy_commands.submit()?;
@@ -232,6 +242,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //create the camera
     let mut camera = Camera::new(65.0, WINDOW_WIDTH, WINDOW_HEIGHT, 0.1, 100.0);
+
+    let (shadow_map, shadow_sampler) = create_shadow_map(&gpu)?;
+    let shadow_pipeline = pipeline_manager.get_pipeline(pipeline::PipelineType::Shadow)?;
+
+    // Set up light
+    let mut light = Light {
+        position: ultraviolet::Vec3::new(5.0, 10.0, 5.0),
+        direction: ultraviolet::Vec3::new(-0.5, -1.0, -0.5).normalized(),
+        view_projection: ultraviolet::Mat4::identity(),
+};
 
     //hide cursor, capture mouse and restrict to window
     sdl_context.mouse().set_relative_mouse_mode(&window, true);
@@ -309,17 +329,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             camera.move_camera(Vec3::new(0.0, -move_speed, 0.0));
         }
         
-        
-        
-        //Update camera view_matrix
         camera.update_view_matrix();
-        //let debug_camera_position = &camera.position();
 
-        //println!("View Matrix: {:?}", camera.view_matrix());
-        //println!("Projection Matrix: {:?}", camera.projection_matrix());
-
-
-        //println!("{x} {y} {z}", x = debug_camera_position.x.to_string(), y = debug_camera_position.y.to_string(), z = debug_camera_position.z.to_string());
+        let light_view = ultraviolet::Mat4::look_at(light.position, light.position + light.direction, ultraviolet::Vec3::unit_y());
+        //let light_proj = orthographic_projection(
+        //    -10.0, 10.0, -10.0, 10.0, 1.0, 50.0,
+        //);
+        let light_proj = ultraviolet::projection::perspective_vk(-10.0, 10.0, -10.0, 10.0);
+        light.view_projection = light_proj * light_view;
 
         // The swapchain texture is basically the framebuffer corresponding to the drawable
         // area of a given window - note how we "wait" for it to come up
@@ -348,7 +365,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 gpu.begin_render_pass(&command_buffer, &color_targets, Some(&depth_target))?;
 
             // Screen is cleared below due to the color target info
-            render_pass.bind_graphics_pipeline(&pipeline);
+            render_pass.bind_graphics_pipeline(pipeline_manager.get_pipeline(pipeline::PipelineType::Opaque)?);
 
             // Now we'll bind our buffers/sampler and draw the cube
             render_pass.bind_vertex_buffers(
@@ -617,4 +634,48 @@ fn mat4_to_array(mat: ultraviolet::Mat4) -> [f32; 16] {
         }
     }
     array
+}
+
+fn create_shadow_map(gpu: &Device) -> Result<(Texture<'static>, Sampler), Error> {
+    // Create shadow map texture
+    let shadow_map = gpu.create_texture(
+        TextureCreateInfo::new()
+            .with_type(TextureType::_2D)
+            .with_width(SHADOW_MAP_SIZE)
+            .with_height(SHADOW_MAP_SIZE)
+            .with_layer_count_or_depth(1)
+            .with_num_levels(1)
+            .with_sample_count(SampleCount::NoMultiSampling)
+            .with_format(TextureFormat::D32Float)
+            .with_usage(TextureUsage::DepthStencilTarget | TextureUsage::Sampler),
+    )?;
+
+    // Create shadow sampler with comparison mode
+    let shadow_sampler = gpu.create_sampler(
+        SamplerCreateInfo::new()
+            .with_min_filter(Filter::Linear)
+            .with_mag_filter(Filter::Linear)
+            .with_mipmap_mode(SamplerMipmapMode::Linear)
+            .with_address_mode_u(SamplerAddressMode::ClampToEdge)
+            .with_address_mode_v(SamplerAddressMode::ClampToEdge)
+            .with_address_mode_w(SamplerAddressMode::ClampToEdge)
+            .with_compare_op(CompareOp::Less),
+    )?;
+
+    Ok((shadow_map, shadow_sampler))
+}
+
+fn orthographic_projection(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> ultraviolet::Mat4 {
+    let rml = right - left;
+    let rpl = right + left;
+    let tmb = top - bottom;
+    let tpb = top + bottom;
+    let fmn = far - near;
+    
+    ultraviolet::Mat4::new(
+        [2.0 / rml, 0.0, 0.0, 0.0].into(),
+        [0.0, 2.0 / tmb, 0.0, 0.0].into(),
+        [0.0, 0.0, -2.0 / fmn, 0.0].into(),
+        [-(rpl) / rml, -(tpb) / tmb, -(far + near) / fmn, 1.0].into()
+    )
 }
