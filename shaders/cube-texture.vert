@@ -10,6 +10,8 @@ layout (location = 0) out vec2 out_tex_coord;
 // Output a color to the fragment shader
 layout (location = 1) out vec3 frag_color;
 
+layout (location = 2) out vec3 outPos;
+
 // Uniforms that are pushed via SDL_PushGPUVertexUniformData
 layout(set = 1, binding = 0) uniform PushConstants {
     float rotation;
@@ -85,6 +87,8 @@ void main(void) {
 
     gl_Position = projection_matrix * view_matrix * vec4(pos, 1.0);
     out_tex_coord = tex_coord;
+
+    outPos = pos;
 
     // Create a frag color based on the vertex position
     frag_color = normalize(pos) * 0.5 + 0.5;

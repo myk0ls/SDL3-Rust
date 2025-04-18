@@ -57,6 +57,75 @@ impl PipelineManager {
             .ok_or(format!("Pipeline {:?} not found", pipeline_type).into())
     }
 
+   
+    fn create_shadow_pipeline(&self) -> Result<RenderPipeline, Error> {
+        let vert_shader = self.gpu
+            .create_shader()
+            .with_code(
+                ShaderFormat::SpirV,
+                include_bytes!("../shaders/shadow.vert.spv"),
+                ShaderStage::Vertex,
+            )
+            .with_uniform_buffers(1)
+            .with_entrypoint("main")
+            .build()?;
+
+        let frag_shader = self.gpu
+            .create_shader()
+            .with_code(
+                ShaderFormat::SpirV, 
+                include_bytes!("../shaders/shadow.frag.spv"), 
+                ShaderStage::Fragment,
+            )
+            .with_entrypoint("main")
+            .build()?;
+
+        let pipeline = self.gpu
+        .create_graphics_pipeline()
+        .with_primitive_type(PrimitiveType::TriangleList)
+        .with_vertex_shader(&vert_shader)
+        .with_fragment_shader(&frag_shader)
+        .with_vertex_input_state(
+            VertexInputState::new()
+                .with_vertex_buffer_descriptions(&[VertexBufferDescription::new()
+                    .with_slot(0)
+                    .with_pitch(std::mem::size_of::<easy_gltf::model::Vertex>() as u32)
+                    .with_input_rate(VertexInputRate::Vertex)
+                    .with_instance_step_rate(0)])
+                .with_vertex_attributes(&[
+                    VertexAttribute::new()
+                        .with_format(VertexElementFormat::Float3)
+                        .with_location(0)
+                        .with_buffer_slot(0)
+                        .with_offset(0),
+                ]),
+        )
+        .with_rasterizer_state(
+            RasterizerState::new()
+                .with_fill_mode(FillMode::Fill)
+                .with_cull_mode(CullMode::Back) // Cull back faces for shadows
+                .with_depth_bias_constant_factor(2.0), // Add depth bias to combat shadow acne
+                //.with_depth_bias_slope_scale(2.0),
+        )
+        .with_depth_stencil_state(
+            DepthStencilState::new()
+                .with_enable_depth_test(true)
+                .with_enable_depth_write(true)
+                .with_compare_op(CompareOp::LessOrEqual),
+        )
+        .with_target_info(
+            GraphicsPipelineTargetInfo::new()
+                .with_has_depth_stencil_target(true)
+                .with_depth_stencil_format(TextureFormat::D32Float), // Higher precision for shadows
+        )
+        .build()?;
+
+        drop(vert_shader);
+        drop(frag_shader);
+
+        Ok(RenderPipeline { pipeline })
+    }
+
     fn create_opaque_pipeline(&self) -> Result<RenderPipeline, Error> {
             // Our shaders, require to be precompiled by a SPIR-V compiler beforehand
         let vert_shader = self.gpu
@@ -76,9 +145,9 @@ impl PipelineManager {
                 include_bytes!("../shaders/cube-texture.frag.spv"),
                 ShaderStage::Fragment,
             )
-            .with_samplers(1)
+            .with_samplers(2)
             .with_entrypoint("main")
-            .with_uniform_buffers(1)
+            .with_uniform_buffers(2)
             .build()?;
         
         // Create a pipeline, we specify that we want our target format in the swapchain
@@ -153,62 +222,6 @@ impl PipelineManager {
         // The pipeline now holds copies of our shaders, so we can release them
         drop(vert_shader);
         drop(frag_shader);
-
-        Ok(RenderPipeline { pipeline })
-    }
-
-    fn create_shadow_pipeline(&self) -> Result<RenderPipeline, Error> {
-        let vert_shader = self.gpu
-            .create_shader()
-            .with_code(
-                ShaderFormat::SpirV,
-                include_bytes!("../shaders/shadow.vert.spv"),
-                ShaderStage::Vertex,
-            )
-            .with_uniform_buffers(1)
-            .with_entrypoint("main")
-            .build()?;
-
-            let pipeline = self.gpu
-            .create_graphics_pipeline()
-            .with_primitive_type(PrimitiveType::TriangleList)
-            .with_vertex_shader(&vert_shader)
-            .with_vertex_input_state(
-                VertexInputState::new()
-                    .with_vertex_buffer_descriptions(&[VertexBufferDescription::new()
-                        .with_slot(0)
-                        .with_pitch(std::mem::size_of::<easy_gltf::model::Vertex>() as u32)
-                        .with_input_rate(VertexInputRate::Vertex)
-                        .with_instance_step_rate(0)])
-                    .with_vertex_attributes(&[
-                        VertexAttribute::new()
-                            .with_format(VertexElementFormat::Float3)
-                            .with_location(0)
-                            .with_buffer_slot(0)
-                            .with_offset(0),
-                    ]),
-            )
-            .with_rasterizer_state(
-                RasterizerState::new()
-                    .with_fill_mode(FillMode::Fill)
-                    .with_cull_mode(CullMode::Back) // Cull back faces for shadows
-                    .with_depth_bias_constant_factor(2.0), // Add depth bias to combat shadow acne
-                    //.with_depth_bias_slope_scale(2.0),
-            )
-            .with_depth_stencil_state(
-                DepthStencilState::new()
-                    .with_enable_depth_test(true)
-                    .with_enable_depth_write(true)
-                    .with_compare_op(CompareOp::Less),
-            )
-            .with_target_info(
-                GraphicsPipelineTargetInfo::new()
-                    .with_has_depth_stencil_target(true)
-                    .with_depth_stencil_format(TextureFormat::D32Float), // Higher precision for shadows
-            )
-            .build()?;
-
-        drop(vert_shader);
 
         Ok(RenderPipeline { pipeline })
     }

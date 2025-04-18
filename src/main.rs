@@ -112,7 +112,31 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pipeline_manager = PipelineManager::new(gpu.clone(), &window)?;
     pipeline_manager.load_pipelines()?;
 
-    let pipeline = create_pipeline(&gpu, &window)?;
+    //let pipeline = create_pipeline(&gpu, &window)?;
+
+    let mut shadow_map_texture = gpu.create_texture(
+        TextureCreateInfo::new()
+            .with_type(TextureType::_2D)
+            .with_width(SHADOW_MAP_SIZE)
+            .with_height(SHADOW_MAP_SIZE)
+            .with_layer_count_or_depth(1)
+            .with_num_levels(1)
+            .with_sample_count(SampleCount::NoMultiSampling)
+            .with_format(TextureFormat::D32Float) // Use a depth format
+            .with_usage(TextureUsage::DepthStencilTarget | TextureUsage::Sampler),
+    )?;
+
+    // Create a sampler for the shadow map
+    let shadow_sampler = gpu.create_sampler(
+        SamplerCreateInfo::new()
+            .with_min_filter(Filter::Linear)
+            .with_mag_filter(Filter::Linear)
+            .with_mipmap_mode(SamplerMipmapMode::Nearest)
+            .with_address_mode_u(SamplerAddressMode::ClampToEdge)
+            .with_address_mode_v(SamplerAddressMode::ClampToEdge)
+            .with_address_mode_w(SamplerAddressMode::ClampToEdge)
+            .with_compare_op(CompareOp::LessOrEqual),
+    )?;
 
     // We need to start a copy pass in order to transfer data to the GPU
     let copy_commands = gpu.acquire_command_buffer()?;
@@ -243,7 +267,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     //create the camera
     let mut camera = Camera::new(65.0, WINDOW_WIDTH, WINDOW_HEIGHT, 0.1, 100.0);
 
-    let (shadow_map, shadow_sampler) = create_shadow_map(&gpu)?;
+    //let (shadow_map, shadow_sampler) = create_shadow_map(&gpu)?;
     let shadow_pipeline = pipeline_manager.get_pipeline(pipeline::PipelineType::Shadow)?;
 
     // Set up light
@@ -331,19 +355,76 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         camera.update_view_matrix();
 
+        /*
         let light_view = ultraviolet::Mat4::look_at(light.position, light.position + light.direction, ultraviolet::Vec3::unit_y());
         //let light_proj = orthographic_projection(
         //    -10.0, 10.0, -10.0, 10.0, 1.0, 50.0,
         //);
         let light_proj = ultraviolet::projection::perspective_vk(-10.0, 10.0, -10.0, 10.0);
         light.view_projection = light_proj * light_view;
+        */
+
+        let mut command_buffer = gpu.acquire_command_buffer()?;
+
+            let depth_target = DepthStencilTargetInfo::new()
+                .with_texture(&mut shadow_map_texture)
+                .with_cycle(true)
+                .with_clear_depth(1.0)
+                .with_clear_stencil(0)
+                .with_load_op(LoadOp::Clear)
+                .with_store_op(StoreOp::Store)
+                .with_stencil_load_op(LoadOp::Clear)
+                .with_stencil_store_op(StoreOp::Store);
+            let render_pass = gpu.begin_render_pass(&command_buffer, &[], Some(&depth_target))?;
+            render_pass.bind_graphics_pipeline(pipeline_manager.get_pipeline(pipeline::PipelineType::Shadow)?);
+            render_pass.bind_vertex_buffers(
+                0,
+                &[BufferBinding::new()
+                    .with_buffer(&vertex_buffer)
+                    .with_offset(0)],
+            );
+            render_pass.bind_index_buffer(
+                &BufferBinding::new()
+                    .with_buffer(&index_buffer)
+                    .with_offset(0),
+                IndexElementSize::_32Bit,
+            );
+
+            // Define the light's view and projection matrices
+            let light_position = Vec3::new(2.0, -5.0, 3.0); // Example light position
+            let light_target = Vec3::new(0.0, 0.0, 0.0);
+            let light_up = Vec3::new(0.0, 1.0, 0.0);
+            let light_view_matrix = ultraviolet::Mat4::look_at(light_position, light_target, light_up);
+            let light_projection_matrix = ultraviolet::projection::orthographic_gl(
+                90.0_f32.to_radians(),
+                SHADOW_MAP_SIZE as f32 / SHADOW_MAP_SIZE as f32,
+                0.1,
+                100.0,
+                0.1,
+                1.0,
+            );
+            let light_view_projection_matrix = light_view_matrix * light_projection_matrix;
+            let light_view_projection_data: [f32; 16] = mat4_to_array(light_view_projection_matrix);
+            command_buffer.push_vertex_uniform_data(0, &light_view_projection_data);
+
+            println!("Light View Projection Matrix:");
+            for row in 0..4 {
+                print!("[ ");
+                for col in 0..4 {
+                    print!("{:>8.3} ", light_view_projection_data[row * 4 + col]);
+                }
+                println!("]");
+            }
+
+            render_pass.draw_indexed_primitives(collected_indices.len() as u32, 1, 0, 0, 0);
+            gpu.end_render_pass(render_pass);
 
         // The swapchain texture is basically the framebuffer corresponding to the drawable
         // area of a given window - note how we "wait" for it to come up
         //
         // This is because a swapchain needs to be "allocated", and it can quickly run out
         // if we don't properly time the rendering process.
-        let mut command_buffer = gpu.acquire_command_buffer()?;
+        
         if let Ok(swapchain) = command_buffer.wait_and_acquire_swapchain_texture(&window) {
             // Again, like in gpu-clear.rs, we'd want to define basic operations for our cube
             let color_targets = [ColorTargetInfo::default()
@@ -405,8 +486,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 //command_buffer.push_fragment_uniform_data(1, &material.metallic_factor);
                 //command_buffer.push_fragment_uniform_data(2, &material.roughness_factor);
 
-                
             }
+
+            render_pass.bind_fragment_samplers(
+                1,
+                &[TextureSamplerBinding::new()
+                    .with_texture(&shadow_map_texture)
+                    .with_sampler(&shadow_sampler)]     
+            );
+
+            command_buffer.push_fragment_uniform_data(1, &light_view_projection_data);
 
             // Set the rotation uniform for our cube vert shader
             command_buffer.push_vertex_uniform_data(0, &rotation);
